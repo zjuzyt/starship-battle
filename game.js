@@ -24,7 +24,7 @@ let spawnTimer = 0;
 let powerTimer = 0;
 
 function xpForLevel(level) {
-  return Math.round(120 * Math.pow(1.33, level - 1));
+  return Math.round(190 * Math.pow(1.42, level - 1));
 }
 
 function createState() {
@@ -52,6 +52,7 @@ function createState() {
       speed: 395,
       beams: 1,
       bulletDamage: 1,
+      fireRateBonus: 0,
       rapidFire: 0,
       shieldHits: 0,
     },
@@ -76,7 +77,7 @@ function makeStar(randomX = false) {
 
 function resetGame() {
   state = createState();
-  spawnTimer = 0.45;
+  spawnTimer = 0.65;
   powerTimer = 7;
   lastTime = performance.now();
   overlay.classList.add("hidden");
@@ -133,7 +134,7 @@ function update(dt) {
   state.player.rapidFire = Math.max(0, state.player.rapidFire - dt);
   state.noticeTimer = Math.max(0, state.noticeTimer - dt);
 
-  const nextWave = Math.max(1, Math.floor(state.elapsed * 0.36 + state.score / 520) + 1);
+  const nextWave = Math.max(1, Math.floor(state.elapsed * 0.16 + state.score / 1400) + 1);
   if (nextWave !== state.wave) {
     state.wave = nextWave;
     updateHud();
@@ -141,7 +142,7 @@ function update(dt) {
 
   if (spawnTimer <= 0) {
     spawnEnemy();
-    spawnTimer = clamp(1.02 - state.wave * 0.05 - state.level * 0.012 + Math.random() * 0.2, 0.24, 1.05);
+    spawnTimer = clamp(1.26 - state.wave * 0.03 - state.level * 0.005 + Math.random() * 0.25, 0.55, 1.45);
   }
 
   if (powerTimer <= 0) {
@@ -198,10 +199,10 @@ function updateBullets(dt) {
 
 function chooseEnemyType() {
   const weights = [
-    { type: "asteroid", weight: 52 },
-    { type: "raider", weight: state.wave >= 2 ? 28 + state.wave * 0.4 : 0 },
-    { type: "hunter", weight: state.wave >= 3 ? 16 + state.wave * 0.45 : 0 },
-    { type: "juggernaut", weight: state.wave >= 5 ? 8 + state.wave * 0.4 : 0 },
+    { type: "asteroid", weight: 56 },
+    { type: "raider", weight: state.wave >= 2 ? 24 + state.wave * 0.25 : 0 },
+    { type: "hunter", weight: state.wave >= 4 ? 10 + state.wave * 0.3 : 0 },
+    { type: "juggernaut", weight: state.wave >= 7 ? 4 + state.wave * 0.22 : 0 },
   ];
 
   const total = weights.reduce((sum, item) => sum + item.weight, 0);
@@ -215,18 +216,19 @@ function chooseEnemyType() {
 
 function spawnEnemy() {
   const type = chooseEnemyType();
-  const elite = Math.random() < Math.min(0.06 + state.wave * 0.01, 0.22);
+  const elite = Math.random() < Math.min(0.03 + state.wave * 0.004, 0.14);
 
   const base = {
-    asteroid: { hp: 1, speed: 145, drift: 14, size: 34 + Math.random() * 24, score: 80, xp: 24, cooldown: 99 },
-    raider: { hp: 2, speed: 122, drift: 36, size: 38, score: 140, xp: 42, cooldown: 1.55 },
-    hunter: { hp: 2, speed: 176, drift: 86, size: 34, score: 170, xp: 55, cooldown: 99 },
-    juggernaut: { hp: 5, speed: 96, drift: 18, size: 52, score: 230, xp: 72, cooldown: 2.1 },
+    asteroid: { hp: 1, speed: 138, speedCap: 198, drift: 14, size: 34 + Math.random() * 24, score: 70, xp: 10, cooldown: 99 },
+    raider: { hp: 2, speed: 116, speedCap: 188, drift: 34, size: 38, score: 125, xp: 16, cooldown: 1.75 },
+    hunter: { hp: 2, speed: 158, speedCap: 214, drift: 74, size: 34, score: 160, xp: 22, cooldown: 99 },
+    juggernaut: { hp: 5, speed: 92, speedCap: 168, drift: 16, size: 52, score: 225, xp: 30, cooldown: 2.4 },
   }[type];
 
-  const waveScale = 1 + (state.wave - 1) * 0.16;
-  const eliteScale = elite ? 1.8 : 1;
+  const waveScale = 1 + (state.wave - 1) * 0.1;
+  const eliteScale = elite ? 1.55 : 1;
   const size = base.size * (elite ? 1.15 : 1);
+  const speed = clamp(base.speed + state.wave * 3 + Math.random() * 22 + (elite ? 10 : 0), base.speed * 0.95, base.speedCap);
 
   state.enemies.push({
     type,
@@ -237,11 +239,12 @@ function spawnEnemy() {
     height: size,
     r: size * 0.48,
     hp: Math.max(1, Math.round(base.hp * waveScale * eliteScale)),
-    speed: base.speed + state.wave * 8 + Math.random() * 35 + (elite ? 28 : 0),
+    speed,
     drift: base.drift + (elite ? 10 : 0),
     cooldown: base.cooldown + Math.random() * 0.6,
-    score: Math.round(base.score * waveScale * (elite ? 1.7 : 1)),
-    xp: Math.round(base.xp * waveScale * (elite ? 1.7 : 1)),
+    score: Math.round(base.score * waveScale * (elite ? 1.55 : 1)),
+    xp: Math.round(base.xp * waveScale * (elite ? 1.45 : 1)),
+    contactDamage: type === "juggernaut" ? 2 : 1,
     seed: Math.random() * 10,
   });
 }
@@ -262,28 +265,37 @@ function updateEnemies(dt) {
     enemy.cooldown -= dt;
 
     if (enemy.type === "raider" && enemy.cooldown <= 0) {
+      const tier = Math.floor((state.wave - 1) / 5);
+      const bulletSpeed = Math.min(290, 205 + state.wave * 4);
       state.enemyBullets.push({
         x: enemy.x - 24,
         y: enemy.y,
         r: 5,
-        vx: -(220 + state.wave * 11),
+        vx: -bulletSpeed,
         vy: 0,
+        damage: 1,
       });
-      enemy.cooldown = 1.45 + Math.random() * 0.9;
+      if (tier >= 1) {
+        state.enemyBullets.push({ x: enemy.x - 24, y: enemy.y, r: 4.6, vx: -bulletSpeed * 0.9, vy: 48, damage: 1 });
+        state.enemyBullets.push({ x: enemy.x - 24, y: enemy.y, r: 4.6, vx: -bulletSpeed * 0.9, vy: -48, damage: 1 });
+      }
+      enemy.cooldown = Math.max(0.85, 1.65 - tier * 0.12 + Math.random() * 0.9);
     }
 
     if (enemy.type === "juggernaut" && enemy.cooldown <= 0) {
-      const speed = 205 + state.wave * 9;
+      const speed = Math.min(280, 192 + state.wave * 4);
+      const spread = 95 + Math.min(55, state.wave * 4);
       for (const vy of [-95, 0, 95]) {
         state.enemyBullets.push({
           x: enemy.x - 30,
           y: enemy.y,
           r: 5.2,
           vx: -speed,
-          vy,
+          vy: (vy / 95) * spread,
+          damage: 1,
         });
       }
-      enemy.cooldown = 2.0 + Math.random() * 1.0;
+      enemy.cooldown = Math.max(1.1, 2.2 - state.wave * 0.02 + Math.random() * 0.9);
     }
   }
 
@@ -346,7 +358,8 @@ function shoot() {
     });
   }
 
-  let cooldown = Math.max(0.08, 0.23 - Math.min(0.1, (player.beams - 1) * 0.008));
+  let cooldown = 0.24 + Math.min(0.08, (player.beams - 1) * 0.004) - player.fireRateBonus;
+  cooldown = clamp(cooldown, 0.1, 0.32);
   if (player.rapidFire > 0) cooldown *= 0.68;
   state.fireCooldown = cooldown;
 }
@@ -366,26 +379,41 @@ function gainExperience(amount, x, y) {
 function levelUp() {
   state.level += 1;
 
-  state.player.beams += 1;
+  const bonuses = [];
 
+  if (state.level % 2 === 0) {
+    state.player.beams += 1;
+    bonuses.push("射线 +1");
+  }
   if (state.level % 3 === 0) {
-    state.maxLives += 1;
+    state.player.bulletDamage += 1;
+    bonuses.push("伤害 +1");
   }
   if (state.level % 4 === 0) {
-    state.player.speed += 18;
+    state.maxLives += 1;
+    bonuses.push("生命上限 +1");
   }
   if (state.level % 5 === 0) {
-    state.player.bulletDamage += 1;
+    state.player.speed = Math.min(520, state.player.speed + 12);
+    bonuses.push("移速 +12");
   }
   if (state.level % 6 === 0) {
+    state.player.fireRateBonus = Math.min(0.09, state.player.fireRateBonus + 0.012);
+    bonuses.push("射速 +");
+  }
+  if (state.level % 8 === 0) {
     state.revives = Math.min(3, state.revives + 1);
+    bonuses.push("复活 +1");
+  }
+  if (bonuses.length === 0) {
+    bonuses.push("战舰强化");
   }
 
   state.lives = state.maxLives;
-  state.player.rapidFire = Math.max(state.player.rapidFire, 5.5);
+  state.player.rapidFire = Math.max(state.player.rapidFire, 3.6);
   state.xpToNext = xpForLevel(state.level);
 
-  setNotice(`升级到 Lv.${state.level}：射线 +1，生命回满`, 2.4);
+  setNotice(`升级到 Lv.${state.level}：${bonuses.slice(0, 2).join("，")}，生命回满`, 2.4);
   burst(state.player.x, state.player.y, "#7de5ff", 24);
   updateHud();
 }
@@ -423,7 +451,9 @@ function handleCollisions() {
     const shotHit = state.enemyBullets.find((bullet) => circleRect(bullet.x, bullet.y, bullet.r, playerBox));
 
     if (enemyHit || shotHit) {
-      damagePlayer();
+      const enemyDamage = enemyHit ? enemyHit.contactDamage || 1 : 0;
+      const shotDamage = shotHit ? shotHit.damage || 1 : 0;
+      damagePlayer(Math.max(enemyDamage, shotDamage, 1));
       if (enemyHit) enemyHit.hp = 0;
       if (shotHit) shotHit.hit = true;
     }
@@ -449,7 +479,7 @@ function handleCollisions() {
         burst(powerup.x, powerup.y, "#7de5ff", 20);
       }
 
-      gainExperience(18, powerup.x, powerup.y);
+      gainExperience(10, powerup.x, powerup.y);
       state.score += 35;
       updateHud();
     }
@@ -457,7 +487,7 @@ function handleCollisions() {
   state.powerups = state.powerups.filter((powerup) => !powerup.hit);
 }
 
-function damagePlayer() {
+function damagePlayer(amount = 1) {
   if (state.player.shieldHits > 0) {
     state.player.shieldHits -= 1;
     setNotice(`护盾吸收伤害，剩余 ${state.player.shieldHits} 层`, 1.5);
@@ -465,7 +495,7 @@ function damagePlayer() {
     return;
   }
 
-  state.lives -= 1;
+  state.lives -= amount;
   state.invulnerable = 1.7;
   burst(state.player.x, state.player.y, "#ff5c7a", 28);
   updateHud();
